@@ -4,7 +4,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Layers, Navigation, Target, Upload, Menu, MapPin, Settings, List, Download, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Layers, Navigation, Target, Upload, Menu, MapPin, Settings, List, Download, Trash2, Eye, EyeOff, Route, Play, Square, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Position {
@@ -22,6 +22,22 @@ interface Waypoint {
   timestamp: Date;
 }
 
+interface TrailPoint {
+  latitude: number;
+  longitude: number;
+  timestamp: Date;
+  accuracy?: number;
+}
+
+interface Trail {
+  id: string;
+  name: string;
+  points: TrailPoint[];
+  startTime: Date;
+  endTime?: Date;
+  distance?: number;
+}
+
 const HikingMap = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -33,9 +49,16 @@ const HikingMap = () => {
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [showTokenInput, setShowTokenInput] = useState(true);
   const [showWaypointPanel, setShowWaypointPanel] = useState(false);
+  const [showTrailPanel, setShowTrailPanel] = useState(false);
   const [selectedWaypoint, setSelectedWaypoint] = useState<string | null>(null);
+  const [selectedTrail, setSelectedTrail] = useState<string | null>(null);
+  const [isRecordingTrail, setIsRecordingTrail] = useState(false);
+  const [currentTrail, setCurrentTrail] = useState<TrailPoint[]>([]);
+  const [savedTrails, setSavedTrails] = useState<Trail[]>([]);
   const userMarker = useRef<mapboxgl.Marker | null>(null);
   const waypointMarkers = useRef<mapboxgl.Marker[]>([]);
+  const trailSource = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!mapContainer.current || !mapboxToken) return;
@@ -91,6 +114,18 @@ const HikingMap = () => {
 
         setCurrentPosition(newPosition);
         updateUserMarker(newPosition);
+        
+        // Record trail point if recording
+        if (isRecordingTrail) {
+          const trailPoint: TrailPoint = {
+            latitude: newPosition.latitude,
+            longitude: newPosition.longitude,
+            timestamp: new Date(),
+            accuracy: newPosition.accuracy,
+          };
+          setCurrentTrail(prev => [...prev, trailPoint]);
+          updateTrailOnMap([...currentTrail, trailPoint]);
+        }
         
         if (map.current) {
           map.current.flyTo({
@@ -281,7 +316,6 @@ const HikingMap = () => {
     toast.success("Waypoint deleted");
   };
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -319,6 +353,222 @@ const HikingMap = () => {
 
   const triggerFileUpload = () => {
     fileInputRef.current?.click();
+  };
+
+  const startTrailRecording = () => {
+    if (!currentPosition) {
+      toast.error("GPS location required to start trail recording");
+      return;
+    }
+
+    setIsRecordingTrail(true);
+    setCurrentTrail([{
+      latitude: currentPosition.latitude,
+      longitude: currentPosition.longitude,
+      timestamp: new Date(),
+      accuracy: currentPosition.accuracy,
+    }]);
+    toast.success("Trail recording started!");
+  };
+
+  const stopTrailRecording = () => {
+    if (currentTrail.length < 2) {
+      toast.error("Trail too short to save");
+      setIsRecordingTrail(false);
+      setCurrentTrail([]);
+      return;
+    }
+
+    const trail: Trail = {
+      id: `trail-${Date.now()}`,
+      name: `Trail ${savedTrails.length + 1}`,
+      points: currentTrail,
+      startTime: currentTrail[0].timestamp,
+      endTime: new Date(),
+      distance: calculateTrailDistance(currentTrail),
+    };
+
+    setSavedTrails([...savedTrails, trail]);
+    setIsRecordingTrail(false);
+    setCurrentTrail([]);
+    
+    // Clear current trail from map
+    if (map.current && trailSource.current) {
+      map.current.removeLayer('current-trail-line');
+      map.current.removeSource(trailSource.current);
+      trailSource.current = null;
+    }
+    
+    toast.success(`Trail "${trail.name}" saved!`);
+  };
+
+  const calculateTrailDistance = (points: TrailPoint[]): number => {
+    let distance = 0;
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      distance += getDistanceBetweenPoints(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
+    }
+    return distance;
+  };
+
+  const getDistanceBetweenPoints = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  };
+
+  const updateTrailOnMap = (points: TrailPoint[]) => {
+    if (!map.current || points.length < 2) return;
+
+    const coordinates = points.map(p => [p.longitude, p.latitude]);
+    
+    if (trailSource.current) {
+      const source = map.current.getSource(trailSource.current) as mapboxgl.GeoJSONSource;
+      if (source) {
+        source.setData({
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'LineString',
+            coordinates: coordinates
+          }
+        });
+      }
+    } else {
+      const sourceId = `current-trail-${Date.now()}`;
+      trailSource.current = sourceId;
+      
+      map.current.addSource(sourceId, {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'LineString',
+            coordinates: coordinates
+          }
+        }
+      });
+
+      map.current.addLayer({
+        id: 'current-trail-line',
+        type: 'line',
+        source: sourceId,
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': 'hsl(var(--track-active))',
+          'line-width': 4,
+          'line-opacity': 0.8
+        }
+      });
+    }
+  };
+
+  const selectTrailOnMap = (trailId: string) => {
+    const trail = savedTrails.find(t => t.id === trailId);
+    if (!trail || !map.current) return;
+
+    setSelectedTrail(trailId);
+    
+    // Remove existing trail layer
+    if (map.current.getLayer('selected-trail-line')) {
+      map.current.removeLayer('selected-trail-line');
+      map.current.removeSource('selected-trail');
+    }
+
+    const coordinates = trail.points.map(p => [p.longitude, p.latitude]);
+    
+    map.current.addSource('selected-trail', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: coordinates
+        }
+      }
+    });
+
+    map.current.addLayer({
+      id: 'selected-trail-line',
+      type: 'line',
+      source: 'selected-trail',
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      paint: {
+        'line-color': 'hsl(var(--primary))',
+        'line-width': 4,
+        'line-opacity': 0.9
+      }
+    });
+
+    // Fit map to trail bounds
+    const bounds = new mapboxgl.LngLatBounds();
+    coordinates.forEach(coord => bounds.extend(coord as [number, number]));
+    map.current.fitBounds(bounds, { padding: 50 });
+    
+    toast.success(`Showing trail: ${trail.name}`);
+  };
+
+  const deleteTrail = (trailId: string) => {
+    setSavedTrails(savedTrails.filter(t => t.id !== trailId));
+    
+    if (selectedTrail === trailId) {
+      setSelectedTrail(null);
+      // Remove trail from map
+      if (map.current && map.current.getLayer('selected-trail-line')) {
+        map.current.removeLayer('selected-trail-line');
+        map.current.removeSource('selected-trail');
+      }
+    }
+    
+    toast.success("Trail deleted");
+  };
+
+  const exportTrail = (trailId: string) => {
+    const trail = savedTrails.find(t => t.id === trailId);
+    if (!trail) return;
+
+    const gpxContent = `<?xml version="1.0"?>
+<gpx version="1.1" creator="HikeTracker">
+  <trk>
+    <name>${trail.name}</name>
+    <trkseg>
+      ${trail.points.map(point => `
+      <trkpt lat="${point.latitude}" lon="${point.longitude}">
+        <time>${point.timestamp.toISOString()}</time>
+      </trkpt>`).join('')}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+    const blob = new Blob([gpxContent], { type: 'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${trail.name.replace(/\s+/g, '-')}-${trail.startTime.toISOString().split('T')[0]}.gpx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success(`Trail "${trail.name}" exported as GPX file`);
   };
 
   if (showTokenInput) {
@@ -374,8 +624,15 @@ const HikingMap = () => {
           </div>
           <div className="flex items-center gap-4">
             {currentPosition && (
-              <div className="px-3 py-1 rounded-full bg-primary-foreground/20 text-primary-foreground text-sm font-medium">
-                GPS Active
+              <div className="flex items-center gap-2">
+                <div className="px-3 py-1 rounded-full bg-primary-foreground/20 text-primary-foreground text-sm font-medium">
+                  GPS Active
+                </div>
+                {isRecordingTrail && (
+                  <div className="px-3 py-1 rounded-full bg-red-500/80 text-white text-sm font-medium animate-pulse">
+                    Recording Trail
+                  </div>
+                )}
               </div>
             )}
             
@@ -419,6 +676,20 @@ const HikingMap = () => {
                 </DropdownMenuGroup>
                 
                 <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-foreground/80">Trail Recording</DropdownMenuLabel>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem 
+                    onClick={isRecordingTrail ? stopTrailRecording : startTrailRecording} 
+                    disabled={!currentPosition}
+                    className="cursor-pointer"
+                  >
+                    {isRecordingTrail ? <Square className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
+                    <span>{isRecordingTrail ? 'Stop Recording' : 'Start Recording'}</span>
+                    {isRecordingTrail && <span className="ml-auto text-red-500">●</span>}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+
+                <DropdownMenuSeparator />
                 <DropdownMenuLabel className="text-foreground/80">Actions</DropdownMenuLabel>
                 <DropdownMenuGroup>
                   <DropdownMenuItem onClick={addWaypoint} disabled={!currentPosition} className="cursor-pointer">
@@ -430,6 +701,11 @@ const HikingMap = () => {
                     <span>Manage Waypoints</span>
                     {showWaypointPanel && <span className="ml-auto text-primary">●</span>}
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowTrailPanel(!showTrailPanel)} className="cursor-pointer">
+                    <Route className="w-4 h-4 mr-2" />
+                    <span>My Trails</span>
+                    {showTrailPanel && <span className="ml-auto text-primary">●</span>}
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={triggerFileUpload} className="cursor-pointer">
                     <Upload className="w-4 h-4 mr-2" />
                     <span>Upload GPX/KML</span>
@@ -437,6 +713,7 @@ const HikingMap = () => {
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
         </div>
       </div>
 
@@ -448,7 +725,6 @@ const HikingMap = () => {
         onChange={handleFileUpload}
         className="hidden"
       />
-      </div>
 
       {/* Enhanced Position Info */}
       {currentPosition && (
@@ -546,6 +822,88 @@ const HikingMap = () => {
                           onClick={(e) => {
                             e.stopPropagation();
                             deleteWaypoint(wp.id);
+                          }}
+                          className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Trail Management Panel */}
+      {showTrailPanel && (
+        <Card className="absolute top-20 left-4 p-4 w-80 bg-card/95 backdrop-blur-md border border-border/50 shadow-elegant max-h-[calc(100vh-200px)] overflow-hidden">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">My Trails</h3>
+              <div className="flex items-center gap-2">
+                <div className="px-2 py-1 rounded-full bg-primary/20 text-primary text-xs font-medium">
+                  {savedTrails.length}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowTrailPanel(false)}
+                  className="h-6 w-6 p-0"
+                >
+                  <EyeOff className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {savedTrails.length === 0 ? (
+                <div className="text-center text-muted-foreground text-sm py-8">
+                  No saved trails yet. Start recording to create your first trail!
+                </div>
+              ) : (
+                savedTrails.map((trail, index) => (
+                  <div 
+                    key={trail.id} 
+                    className={`p-3 rounded-lg border transition-all duration-200 cursor-pointer ${
+                      selectedTrail === trail.id 
+                        ? 'bg-primary/20 border-primary/50' 
+                        : 'bg-muted/50 border-border/30 hover:bg-muted/70'
+                    }`}
+                    onClick={() => selectTrailOnMap(trail.id)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{trail.name}</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {trail.startTime.toLocaleDateString()} • {trail.points.length} points
+                        </div>
+                        {trail.distance && (
+                          <div className="text-xs text-muted-foreground">
+                            {(trail.distance / 1000).toFixed(2)} km
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            exportTrail(trail.id);
+                          }}
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <Download className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteTrail(trail.id);
                           }}
                           className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                         >
