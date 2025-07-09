@@ -556,13 +556,21 @@ const HikingMap = () => {
 
     setSelectedTrail(trailId);
     
-    // Remove existing trail layer
+    // Remove existing trail layer if it exists
     if (map.current.getLayer('selected-trail-line')) {
       map.current.removeLayer('selected-trail-line');
+    }
+    if (map.current.getSource('selected-trail')) {
       map.current.removeSource('selected-trail');
     }
 
     const coordinates = trail.points.map(p => [p.longitude, p.latitude]);
+    
+    // Ensure we have valid coordinates
+    if (coordinates.length === 0) {
+      toast.error("Trail has no valid coordinates");
+      return;
+    }
     
     map.current.addSource('selected-trail', {
       type: 'geojson',
@@ -585,7 +593,7 @@ const HikingMap = () => {
         'line-cap': 'round'
       },
       paint: {
-        'line-color': 'hsl(var(--primary))',
+        'line-color': isImported ? '#ef4444' : 'hsl(var(--primary))', // Red for imported, primary for recorded
         'line-width': 4,
         'line-opacity': 0.9
       }
