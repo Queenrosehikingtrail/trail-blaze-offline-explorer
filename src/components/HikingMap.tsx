@@ -4,7 +4,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Layers, Navigation, Target, Upload, Menu, MapPin, Settings, List, Download, Trash2, Eye, EyeOff, Route, Play, Square, Save } from 'lucide-react';
+import { Layers, Navigation, Target, Upload, Menu, MapPin, Settings, List, Download, Trash2, Eye, EyeOff, Route, Play, Square, Save, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Position {
@@ -49,12 +49,14 @@ const HikingMap = () => {
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [showTokenInput, setShowTokenInput] = useState(true);
   const [showWaypointPanel, setShowWaypointPanel] = useState(false);
-  const [showTrailPanel, setShowTrailPanel] = useState(false);
+  const [showRecordedTrailPanel, setShowRecordedTrailPanel] = useState(false);
+  const [showImportedTrailPanel, setShowImportedTrailPanel] = useState(false);
   const [selectedWaypoint, setSelectedWaypoint] = useState<string | null>(null);
   const [selectedTrail, setSelectedTrail] = useState<string | null>(null);
   const [isRecordingTrail, setIsRecordingTrail] = useState(false);
   const [currentTrail, setCurrentTrail] = useState<TrailPoint[]>([]);
-  const [savedTrails, setSavedTrails] = useState<Trail[]>([]);
+  const [recordedTrails, setRecordedTrails] = useState<Trail[]>([]);
+  const [importedTrails, setImportedTrails] = useState<Trail[]>([]);
   const userMarker = useRef<mapboxgl.Marker | null>(null);
   const waypointMarkers = useRef<mapboxgl.Marker[]>([]);
   const trailSource = useRef<string | null>(null);
@@ -334,9 +336,13 @@ const HikingMap = () => {
       try {
         const content = e.target?.result as string;
         if (content) {
-          // Basic GPX/KML parsing would go here
-          // For now, just show success message
-          toast.success(`Uploaded ${file.name} - parsing functionality to be implemented`);
+          const trail = parseTrailFile(content, file.name, fileExtension);
+          if (trail) {
+            setImportedTrails([...importedTrails, trail]);
+            toast.success(`Imported ${trail.name} with ${trail.points.length} points`);
+          } else {
+            toast.error("Failed to parse trail file");
+          }
         }
       } catch (error) {
         console.error('File parsing error:', error);
@@ -349,6 +355,72 @@ const HikingMap = () => {
     };
     
     reader.readAsText(file);
+  };
+
+  const parseTrailFile = (content: string, fileName: string, fileExtension: string): Trail | null => {
+    try {
+      let points: TrailPoint[] = [];
+      
+      if (fileExtension === '.gpx') {
+        // Parse GPX
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(content, 'text/xml');
+        const trackPoints = xmlDoc.getElementsByTagName('trkpt');
+        
+        for (let i = 0; i < trackPoints.length; i++) {
+          const point = trackPoints[i];
+          const lat = parseFloat(point.getAttribute('lat') || '0');
+          const lon = parseFloat(point.getAttribute('lon') || '0');
+          const timeElement = point.getElementsByTagName('time')[0];
+          const time = timeElement ? new Date(timeElement.textContent || '') : new Date();
+          
+          points.push({
+            latitude: lat,
+            longitude: lon,
+            timestamp: time,
+          });
+        }
+      } else if (fileExtension === '.kml') {
+        // Parse KML
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(content, 'text/xml');
+        const coordinates = xmlDoc.getElementsByTagName('coordinates');
+        
+        if (coordinates.length > 0) {
+          const coordText = coordinates[0].textContent || '';
+          const coordPairs = coordText.trim().split(/\s+/);
+          
+          coordPairs.forEach((pair) => {
+            const [lon, lat] = pair.split(',').map(Number);
+            if (!isNaN(lat) && !isNaN(lon)) {
+              points.push({
+                latitude: lat,
+                longitude: lon,
+                timestamp: new Date(),
+              });
+            }
+          });
+        }
+      }
+      
+      if (points.length === 0) {
+        return null;
+      }
+      
+      const trail: Trail = {
+        id: `imported-${Date.now()}`,
+        name: fileName.replace(/\.(gpx|kml)$/i, ''),
+        points: points,
+        startTime: points[0].timestamp,
+        endTime: points[points.length - 1].timestamp,
+        distance: calculateTrailDistance(points),
+      };
+      
+      return trail;
+    } catch (error) {
+      console.error('Error parsing trail file:', error);
+      return null;
+    }
   };
 
   const triggerFileUpload = () => {
@@ -381,14 +453,14 @@ const HikingMap = () => {
 
     const trail: Trail = {
       id: `trail-${Date.now()}`,
-      name: `Trail ${savedTrails.length + 1}`,
+      name: `Trail ${recordedTrails.length + 1}`,
       points: currentTrail,
       startTime: currentTrail[0].timestamp,
       endTime: new Date(),
       distance: calculateTrailDistance(currentTrail),
     };
 
-    setSavedTrails([...savedTrails, trail]);
+    setRecordedTrails([...recordedTrails, trail]);
     setIsRecordingTrail(false);
     setCurrentTrail([]);
     
@@ -477,8 +549,9 @@ const HikingMap = () => {
     }
   };
 
-  const selectTrailOnMap = (trailId: string) => {
-    const trail = savedTrails.find(t => t.id === trailId);
+  const selectTrailOnMap = (trailId: string, isImported = false) => {
+    const trailList = isImported ? importedTrails : recordedTrails;
+    const trail = trailList.find(t => t.id === trailId);
     if (!trail || !map.current) return;
 
     setSelectedTrail(trailId);
@@ -526,8 +599,12 @@ const HikingMap = () => {
     toast.success(`Showing trail: ${trail.name}`);
   };
 
-  const deleteTrail = (trailId: string) => {
-    setSavedTrails(savedTrails.filter(t => t.id !== trailId));
+  const deleteTrail = (trailId: string, isImported = false) => {
+    if (isImported) {
+      setImportedTrails(importedTrails.filter(t => t.id !== trailId));
+    } else {
+      setRecordedTrails(recordedTrails.filter(t => t.id !== trailId));
+    }
     
     if (selectedTrail === trailId) {
       setSelectedTrail(null);
@@ -541,8 +618,9 @@ const HikingMap = () => {
     toast.success("Trail deleted");
   };
 
-  const exportTrail = (trailId: string) => {
-    const trail = savedTrails.find(t => t.id === trailId);
+  const exportTrail = (trailId: string, isImported = false) => {
+    const trailList = isImported ? importedTrails : recordedTrails;
+    const trail = trailList.find(t => t.id === trailId);
     if (!trail) return;
 
     const gpxContent = `<?xml version="1.0"?>
@@ -701,10 +779,15 @@ const HikingMap = () => {
                     <span>Manage Waypoints</span>
                     {showWaypointPanel && <span className="ml-auto text-primary">●</span>}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowTrailPanel(!showTrailPanel)} className="cursor-pointer">
+                  <DropdownMenuItem onClick={() => setShowRecordedTrailPanel(!showRecordedTrailPanel)} className="cursor-pointer">
                     <Route className="w-4 h-4 mr-2" />
-                    <span>My Trails</span>
-                    {showTrailPanel && <span className="ml-auto text-primary">●</span>}
+                    <span>Recorded Trails</span>
+                    {showRecordedTrailPanel && <span className="ml-auto text-primary">●</span>}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowImportedTrailPanel(!showImportedTrailPanel)} className="cursor-pointer">
+                    <FileText className="w-4 h-4 mr-2" />
+                    <span>Imported Trails</span>
+                    {showImportedTrailPanel && <span className="ml-auto text-primary">●</span>}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={triggerFileUpload} className="cursor-pointer">
                     <Upload className="w-4 h-4 mr-2" />
@@ -837,20 +920,20 @@ const HikingMap = () => {
         </Card>
       )}
 
-      {/* Trail Management Panel */}
-      {showTrailPanel && (
+      {/* Recorded Trails Management Panel */}
+      {showRecordedTrailPanel && (
         <Card className="absolute top-20 left-4 p-4 w-80 bg-card/95 backdrop-blur-md border border-border/50 shadow-elegant max-h-[calc(100vh-200px)] overflow-hidden">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">My Trails</h3>
+              <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">Recorded Trails</h3>
               <div className="flex items-center gap-2">
                 <div className="px-2 py-1 rounded-full bg-primary/20 text-primary text-xs font-medium">
-                  {savedTrails.length}
+                  {recordedTrails.length}
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowTrailPanel(false)}
+                  onClick={() => setShowRecordedTrailPanel(false)}
                   className="h-6 w-6 p-0"
                 >
                   <EyeOff className="w-4 h-4" />
@@ -859,12 +942,12 @@ const HikingMap = () => {
             </div>
             
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {savedTrails.length === 0 ? (
+              {recordedTrails.length === 0 ? (
                 <div className="text-center text-muted-foreground text-sm py-8">
-                  No saved trails yet. Start recording to create your first trail!
+                  No recorded trails yet. Start recording to create your first trail!
                 </div>
               ) : (
-                savedTrails.map((trail, index) => (
+                recordedTrails.map((trail, index) => (
                   <div 
                     key={trail.id} 
                     className={`p-3 rounded-lg border transition-all duration-200 cursor-pointer ${
@@ -872,7 +955,7 @@ const HikingMap = () => {
                         ? 'bg-primary/20 border-primary/50' 
                         : 'bg-muted/50 border-border/30 hover:bg-muted/70'
                     }`}
-                    onClick={() => selectTrailOnMap(trail.id)}
+                    onClick={() => selectTrailOnMap(trail.id, false)}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -892,7 +975,7 @@ const HikingMap = () => {
                           size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
-                            exportTrail(trail.id);
+                            exportTrail(trail.id, false);
                           }}
                           className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
                         >
@@ -903,7 +986,89 @@ const HikingMap = () => {
                           size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
-                            deleteTrail(trail.id);
+                            deleteTrail(trail.id, false);
+                          }}
+                          className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Imported Trails Management Panel */}
+      {showImportedTrailPanel && (
+        <Card className="absolute top-20 right-4 p-4 w-80 bg-card/95 backdrop-blur-md border border-border/50 shadow-elegant max-h-[calc(100vh-200px)] overflow-hidden">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">Imported Trails</h3>
+              <div className="flex items-center gap-2">
+                <div className="px-2 py-1 rounded-full bg-primary/20 text-primary text-xs font-medium">
+                  {importedTrails.length}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowImportedTrailPanel(false)}
+                  className="h-6 w-6 p-0"
+                >
+                  <EyeOff className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {importedTrails.length === 0 ? (
+                <div className="text-center text-muted-foreground text-sm py-8">
+                  No imported trails yet. Upload GPX/KML files to import trails!
+                </div>
+              ) : (
+                importedTrails.map((trail, index) => (
+                  <div 
+                    key={trail.id} 
+                    className={`p-3 rounded-lg border transition-all duration-200 cursor-pointer ${
+                      selectedTrail === trail.id 
+                        ? 'bg-primary/20 border-primary/50' 
+                        : 'bg-muted/50 border-border/30 hover:bg-muted/70'
+                    }`}
+                    onClick={() => selectTrailOnMap(trail.id, true)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{trail.name}</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Imported • {trail.points.length} points
+                        </div>
+                        {trail.distance && (
+                          <div className="text-xs text-muted-foreground">
+                            {(trail.distance / 1000).toFixed(2)} km
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            exportTrail(trail.id, true);
+                          }}
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <Download className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteTrail(trail.id, true);
                           }}
                           className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                         >
