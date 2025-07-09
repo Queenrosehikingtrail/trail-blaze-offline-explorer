@@ -281,10 +281,9 @@ const HikingMap = () => {
     toast.success("Waypoint deleted");
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -293,7 +292,6 @@ const HikingMap = () => {
     const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
     if (!validTypes.includes(fileExtension)) {
       toast.error("Please upload a valid GPX or KML file");
-      event.target.value = '';
       return;
     }
 
@@ -317,11 +315,10 @@ const HikingMap = () => {
     };
     
     reader.readAsText(file);
-    
-    // Reset the input immediately to prevent issues
-    setTimeout(() => {
-      event.target.value = '';
-    }, 0);
+  };
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
   };
 
   if (showTokenInput) {
@@ -433,22 +430,24 @@ const HikingMap = () => {
                     <span>Manage Waypoints</span>
                     {showWaypointPanel && <span className="ml-auto text-primary">●</span>}
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer relative" onClick={(e) => e.preventDefault()}>
+                  <DropdownMenuItem onClick={triggerFileUpload} className="cursor-pointer">
                     <Upload className="w-4 h-4 mr-2" />
                     <span>Upload GPX/KML</span>
-                    <input
-                      type="file"
-                      accept=".gpx,.kml"
-                      onChange={handleFileUpload}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      onClick={(e) => e.stopPropagation()}
-                    />
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
         </div>
+      </div>
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".gpx,.kml"
+        onChange={handleFileUpload}
+        className="hidden"
+      />
       </div>
 
       {/* Enhanced Position Info */}
