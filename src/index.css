@@ -53,6 +53,7 @@ All colors MUST be HSL.
     --track-active: 15 85% 60%;
     --waypoint: 200 70% 55%;
     --elevation-gradient: linear-gradient(135deg, hsl(140 45% 35%), hsl(25 35% 65%));
+    --shadow-elegant: 0 10px 30px -10px hsl(140 30% 15% / 0.15);
     --shadow-map: 0 4px 20px hsl(140 30% 15% / 0.15);
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
