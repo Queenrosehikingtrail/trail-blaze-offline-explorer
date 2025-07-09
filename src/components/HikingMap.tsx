@@ -323,6 +323,8 @@ const HikingMap = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    console.log('File upload started:', file.name);
+
     // Validate file type
     const validTypes = ['.gpx', '.kml'];
     const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
@@ -336,11 +338,20 @@ const HikingMap = () => {
       try {
         const content = e.target?.result as string;
         if (content) {
+          console.log('File content loaded, parsing...');
           const trail = parseTrailFile(content, file.name, fileExtension);
           if (trail) {
-            setImportedTrails([...importedTrails, trail]);
+            console.log('Trail parsed successfully, adding to imported trails...');
+            setImportedTrails(prev => {
+              console.log('Previous imported trails:', prev.length);
+              const newTrails = [...prev, trail];
+              console.log('New imported trails:', newTrails.length);
+              return newTrails;
+            });
             toast.success(`Imported ${trail.name} with ${trail.points.length} points`);
+            console.log('Import completed successfully');
           } else {
+            console.error('Trail parsing failed');
             toast.error("Failed to parse trail file");
           }
         }
@@ -351,10 +362,14 @@ const HikingMap = () => {
     };
     
     reader.onerror = () => {
+      console.error('File reader error');
       toast.error("Failed to read file");
     };
     
     reader.readAsText(file);
+    
+    // Clear the input value to allow re-uploading the same file
+    event.target.value = '';
   };
 
   const parseTrailFile = (content: string, fileName: string, fileExtension: string): Trail | null => {
