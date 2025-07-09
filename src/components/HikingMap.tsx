@@ -93,6 +93,7 @@ const HikingMap = () => {
         if (map.current) {
           map.current.flyTo({
             center: [newPosition.longitude, newPosition.latitude],
+            zoom: 16, // Zoom in closer when GPS is active
             essential: true,
           });
 
