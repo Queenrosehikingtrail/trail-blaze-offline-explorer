@@ -3,7 +3,8 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Layers, Navigation, Target, Upload } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Layers, Navigation, Target, Upload, Menu, MapPin, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Position {
@@ -195,24 +196,46 @@ const HikingMap = () => {
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Validate file type
+    const validTypes = ['.gpx', '.kml'];
+    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!validTypes.includes(fileExtension)) {
+      toast.error("Please upload a valid GPX or KML file");
+      event.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
-      const content = e.target?.result as string;
       try {
-        // Basic GPX/KML parsing would go here
-        // For now, just show success message
-        toast.success(`Uploaded ${file.name} - parsing functionality to be implemented`);
+        const content = e.target?.result as string;
+        if (content) {
+          // Basic GPX/KML parsing would go here
+          // For now, just show success message
+          toast.success(`Uploaded ${file.name} - parsing functionality to be implemented`);
+        }
       } catch (error) {
+        console.error('File parsing error:', error);
         toast.error("Failed to parse file");
       }
     };
+    
+    reader.onerror = () => {
+      toast.error("Failed to read file");
+    };
+    
     reader.readAsText(file);
     
-    // Reset the input to allow same file to be selected again
-    event.target.value = '';
+    // Reset the input immediately to prevent issues
+    setTimeout(() => {
+      event.target.value = '';
+    }, 0);
   };
 
   if (showTokenInput) {
@@ -266,91 +289,76 @@ const HikingMap = () => {
             </div>
             <h1 className="text-xl font-bold text-primary-foreground">HikeTracker</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
             {currentPosition && (
               <div className="px-3 py-1 rounded-full bg-primary-foreground/20 text-primary-foreground text-sm font-medium">
                 GPS Active
               </div>
             )}
+            
+            {/* Dropdown Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="bg-primary-foreground/20 text-primary-foreground border-primary-foreground/30 hover:bg-primary-foreground/30">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Controls
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56 bg-card/95 backdrop-blur-md border border-border/50">
+                <DropdownMenuLabel className="text-foreground/80">Map Controls</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => setMapStyle('street')} className="cursor-pointer">
+                    <Layers className="w-4 h-4 mr-2" />
+                    <span>Street Map</span>
+                    {mapStyle === 'street' && <span className="ml-auto text-primary">●</span>}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setMapStyle('satellite')} className="cursor-pointer">
+                    <Layers className="w-4 h-4 mr-2" />
+                    <span>Satellite Map</span>
+                    {mapStyle === 'satellite' && <span className="ml-auto text-primary">●</span>}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-foreground/80">GPS & Tracking</DropdownMenuLabel>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={isTracking ? stopTracking : startTracking} className="cursor-pointer">
+                    <Target className="w-4 h-4 mr-2" />
+                    <span>{isTracking ? 'Stop GPS' : 'Start GPS'}</span>
+                    {isTracking && <span className="ml-auto text-primary">●</span>}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTrackUp(!trackUp)} className="cursor-pointer">
+                    <Navigation className="w-4 h-4 mr-2" />
+                    <span>Track Up Mode</span>
+                    {trackUp && <span className="ml-auto text-primary">●</span>}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-foreground/80">Actions</DropdownMenuLabel>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={addWaypoint} disabled={!currentPosition} className="cursor-pointer">
+                    <MapPin className="w-4 h-4 mr-2" />
+                    <span>Add Waypoint</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer relative" onClick={(e) => e.preventDefault()}>
+                    <Upload className="w-4 h-4 mr-2" />
+                    <span>Upload GPX/KML</span>
+                    <input
+                      type="file"
+                      accept=".gpx,.kml"
+                      onChange={handleFileUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
-      
-      {/* Enhanced Control Panel */}
-      <Card className="absolute top-20 left-4 p-4 space-y-4 bg-card/95 backdrop-blur-md border border-border/50 shadow-elegant min-w-[200px]">
-        <div className="space-y-3">
-          <div className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">Map Style</div>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant={mapStyle === 'street' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setMapStyle('street')}
-              className="transition-all duration-200"
-            >
-              <Layers className="w-4 h-4 mr-1" />
-              Street
-            </Button>
-            <Button
-              variant={mapStyle === 'satellite' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setMapStyle('satellite')}
-              className="transition-all duration-200"
-            >
-              <Layers className="w-4 h-4 mr-1" />
-              Satellite
-            </Button>
-          </div>
-        </div>
-        
-        <div className="space-y-3">
-          <div className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">Tracking</div>
-          <Button
-            variant={isTracking ? 'destructive' : 'default'}
-            size="sm"
-            onClick={isTracking ? stopTracking : startTracking}
-            className="w-full transition-all duration-200"
-          >
-            <Target className="w-4 h-4 mr-2" />
-            {isTracking ? 'Stop GPS' : 'Start GPS'}
-          </Button>
-          
-          <Button
-            variant={trackUp ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTrackUp(!trackUp)}
-            className="w-full transition-all duration-200"
-          >
-            <Navigation className="w-4 h-4 mr-2" />
-            Track Up {trackUp ? 'ON' : 'OFF'}
-          </Button>
-        </div>
-
-        <div className="space-y-3">
-          <div className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">Actions</div>
-          <Button 
-            size="sm" 
-            onClick={addWaypoint} 
-            disabled={!currentPosition}
-            className="w-full transition-all duration-200"
-            variant="secondary"
-          >
-            Add Waypoint
-          </Button>
-
-          <div className="relative">
-            <input
-              type="file"
-              accept=".gpx,.kml"
-              onChange={handleFileUpload}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            />
-            <Button size="sm" variant="outline" className="w-full transition-all duration-200 hover:bg-accent">
-              <Upload className="w-4 h-4 mr-2" />
-              Upload GPX/KML
-            </Button>
-          </div>
-        </div>
-      </Card>
 
       {/* Enhanced Position Info */}
       {currentPosition && (
