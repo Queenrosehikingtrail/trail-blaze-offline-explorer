@@ -2,43 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+/* Hiking App Design System - Earth tones and outdoor theme
 All colors MUST be HSL.
 */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Base colors - cream and warm whites for readability */
+    --background: 47 20% 97%;
+    --foreground: 140 30% 15%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* Card backgrounds with subtle earth tone */
+    --card: 47 15% 95%;
+    --card-foreground: 140 30% 15%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    /* Popover styling */
+    --popover: 47 20% 97%;
+    --popover-foreground: 140 30% 15%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary - Forest Green for main actions */
+    --primary: 140 45% 35%;
+    --primary-foreground: 47 20% 97%;
+    --primary-glow: 140 45% 45%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary - Earth Brown for secondary elements */
+    --secondary: 25 35% 65%;
+    --secondary-foreground: 140 30% 15%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted tones for backgrounds */
+    --muted: 47 10% 90%;
+    --muted-foreground: 140 15% 45%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent - Sky Blue for highlights */
+    --accent: 200 70% 55%;
+    --accent-foreground: 47 20% 97%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Destructive - Warm red for warnings */
+    --destructive: 15 75% 55%;
+    --destructive-foreground: 47 20% 97%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /* UI elements */
+    --border: 47 15% 85%;
+    --input: 47 15% 92%;
+    --ring: 140 45% 35%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
+    /* Hiking-specific design tokens */
+    --map-overlay: 140 30% 15% / 0.8;
+    --track-active: 15 85% 60%;
+    --waypoint: 200 70% 55%;
+    --elevation-gradient: linear-gradient(135deg, hsl(140 45% 35%), hsl(25 35% 65%));
+    --shadow-map: 0 4px 20px hsl(140 30% 15% / 0.15);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --sidebar-background: 47 15% 95%;
 
     --sidebar-foreground: 240 5.3% 26.1%;
 
