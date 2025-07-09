@@ -360,12 +360,23 @@ const HikingMap = () => {
   const parseTrailFile = (content: string, fileName: string, fileExtension: string): Trail | null => {
     try {
       let points: TrailPoint[] = [];
+      console.log('Parsing file:', fileName, 'Extension:', fileExtension);
+      console.log('File content preview:', content.substring(0, 500));
       
       if (fileExtension === '.gpx') {
         // Parse GPX
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(content, 'text/xml');
+        
+        // Check for parsing errors
+        const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+          console.error('GPX parsing error:', parserError.textContent);
+          return null;
+        }
+        
         const trackPoints = xmlDoc.getElementsByTagName('trkpt');
+        console.log('Found GPX track points:', trackPoints.length);
         
         for (let i = 0; i < trackPoints.length; i++) {
           const point = trackPoints[i];
@@ -374,36 +385,98 @@ const HikingMap = () => {
           const timeElement = point.getElementsByTagName('time')[0];
           const time = timeElement ? new Date(timeElement.textContent || '') : new Date();
           
-          points.push({
-            latitude: lat,
-            longitude: lon,
-            timestamp: time,
-          });
+          if (!isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0) {
+            points.push({
+              latitude: lat,
+              longitude: lon,
+              timestamp: time,
+            });
+          }
         }
       } else if (fileExtension === '.kml') {
         // Parse KML
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(content, 'text/xml');
-        const coordinates = xmlDoc.getElementsByTagName('coordinates');
         
-        if (coordinates.length > 0) {
-          const coordText = coordinates[0].textContent || '';
-          const coordPairs = coordText.trim().split(/\s+/);
-          
-          coordPairs.forEach((pair) => {
-            const [lon, lat] = pair.split(',').map(Number);
-            if (!isNaN(lat) && !isNaN(lon)) {
-              points.push({
-                latitude: lat,
-                longitude: lon,
-                timestamp: new Date(),
-              });
+        // Check for parsing errors
+        const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+          console.error('KML parsing error:', parserError.textContent);
+          return null;
+        }
+        
+        // Try multiple coordinate extraction methods for KML
+        let coordinates = xmlDoc.getElementsByTagName('coordinates');
+        console.log('Found coordinates elements:', coordinates.length);
+        
+        // Also try LineString coordinates (common in KML trails)
+        if (coordinates.length === 0) {
+          const lineStrings = xmlDoc.getElementsByTagName('LineString');
+          console.log('Found LineString elements:', lineStrings.length);
+          for (let i = 0; i < lineStrings.length; i++) {
+            const coordElements = lineStrings[i].getElementsByTagName('coordinates');
+            if (coordElements.length > 0) {
+              coordinates = coordElements;
+              break;
             }
-          });
+          }
+        }
+        
+        // Also try Track/gx:Track coordinates
+        if (coordinates.length === 0) {
+          const tracks = xmlDoc.getElementsByTagName('gx:Track');
+          console.log('Found gx:Track elements:', tracks.length);
+          for (let i = 0; i < tracks.length; i++) {
+            const coordElements = tracks[i].getElementsByTagName('gx:coord');
+            if (coordElements.length > 0) {
+              // Handle gx:coord format (lon lat alt)
+              for (let j = 0; j < coordElements.length; j++) {
+                const coordText = coordElements[j].textContent || '';
+                const [lon, lat] = coordText.trim().split(/\s+/).map(Number);
+                if (!isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0) {
+                  points.push({
+                    latitude: lat,
+                    longitude: lon,
+                    timestamp: new Date(),
+                  });
+                }
+              }
+            }
+          }
+        }
+        
+        // Process standard coordinates if found
+        if (coordinates.length > 0 && points.length === 0) {
+          for (let i = 0; i < coordinates.length; i++) {
+            const coordText = coordinates[i].textContent || '';
+            console.log('Processing coordinates:', coordText.substring(0, 200));
+            
+            // Split by whitespace, newlines, or multiple spaces
+            const coordPairs = coordText.trim().split(/[\s\n\r]+/).filter(pair => pair.length > 0);
+            console.log('Found coordinate pairs:', coordPairs.length);
+            
+            coordPairs.forEach((pair, index) => {
+              const coords = pair.split(',');
+              if (coords.length >= 2) {
+                const lon = parseFloat(coords[0]);
+                const lat = parseFloat(coords[1]);
+                if (!isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0) {
+                  points.push({
+                    latitude: lat,
+                    longitude: lon,
+                    timestamp: new Date(),
+                  });
+                }
+              }
+            });
+          }
         }
       }
       
+      console.log('Parsed points:', points.length);
+      
       if (points.length === 0) {
+        console.error('No valid points found in file');
         return null;
       }
       
@@ -416,6 +489,7 @@ const HikingMap = () => {
         distance: calculateTrailDistance(points),
       };
       
+      console.log('Created trail:', trail.name, 'with', trail.points.length, 'points');
       return trail;
     } catch (error) {
       console.error('Error parsing trail file:', error);
