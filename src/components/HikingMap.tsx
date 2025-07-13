@@ -164,6 +164,36 @@ const HikingMap = () => {
     toast.success("GPS tracking stopped.");
   };
 
+  const findMyLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by this browser");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        if (map.current) {
+          map.current.flyTo({
+            center: [longitude, latitude],
+            zoom: 16,
+            essential: true
+          });
+          toast.success("Found your location!");
+        }
+      },
+      (error) => {
+        toast.error("Unable to get your location");
+        console.error("Geolocation error:", error);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
+    );
+  };
+
   const updateUserMarker = (position: Position) => {
     if (!map.current) return;
 
@@ -868,6 +898,10 @@ const HikingMap = () => {
                     <Target className="w-4 h-4 mr-2" />
                     <span>{isTracking ? 'Stop GPS' : 'Start GPS'}</span>
                     {isTracking && <span className="ml-auto text-primary">●</span>}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={findMyLocation} className="cursor-pointer">
+                    <MapPin className="w-4 h-4 mr-2" />
+                    <span>Where am I?</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setTrackUp(!trackUp)} className="cursor-pointer">
                     <Navigation className="w-4 h-4 mr-2" />
